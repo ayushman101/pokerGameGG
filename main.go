@@ -2,19 +2,15 @@ package main
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/ayushman101/pokerGameGG/deck"
 )
 
 func main() {
-	c, err := deck.NewCard(deck.Hearts, 1)
+	d := deck.New()
 
-	if err != nil {
-		log.Fatal(err)
-	}
+	d = d.Shuffle(3)
 
-	fmt.Println("Hello Poker World")
-	fmt.Println(c)
+	fmt.Println(d)
 
 }

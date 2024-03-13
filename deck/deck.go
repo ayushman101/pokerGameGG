@@ -3,6 +3,7 @@ package deck
 import (
 	"errors"
 	"fmt"
+	"math/rand"
 	"strconv"
 )
 
@@ -84,4 +85,39 @@ func NewCard(s Suit, val int) (Card, error) {
 		suit:  s,
 		value: val,
 	}, nil
+}
+
+type Deck [52]Card
+
+func New() Deck {
+
+	d := [52]Card{}
+
+	x := 0
+	for i := 0; i < 4; i++ {
+		for j := 1; j < 14; j++ {
+			d[x], _ = NewCard(Suit(i), j)
+			x++
+		}
+	}
+
+	return d
+}
+
+func (d Deck) Shuffle(count int) Deck {
+
+	if count < 1 {
+		count = 1
+	}
+
+	for i := 0; i < count; i++ {
+		for j := 0; j < len(d); j++ {
+			x := rand.Intn(i + 1)
+
+			d[j], d[x] = d[x], d[j]
+		}
+
+	}
+
+	return d
 }
