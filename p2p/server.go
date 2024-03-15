@@ -1,6 +1,7 @@
 package p2p
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"net"
@@ -20,20 +21,29 @@ type ServerConfig struct {
 	ListenAddr string // its port number
 }
 
+type Message struct {
+	ListenAddr net.Addr
+	Payload    io.Reader
+}
+
 type Server struct {
 	ServerConfig
 	listner net.Listener
-
+	Handler
 	peers   map[net.Addr]*Peer
-	addpear chan *Peer
+	addpeer chan *Peer
+	delpeer chan *Peer
+	msgs    chan *Message
 }
 
 func NewServer(config ServerConfig) *Server {
 	return &Server{
 		ServerConfig: config,
 		peers:        make(map[net.Addr]*Peer),
-
-		addpear: make(chan *Peer),
+		addpeer:      make(chan *Peer),
+		delpeer:      make(chan *Peer),
+		msgs:         make(chan *Message),
+		Handler:      &DefaultHandler{},
 	}
 }
 
@@ -62,7 +72,7 @@ func (s *Server) acceptLoop() {
 			conn: conn,
 		}
 
-		s.addpear <- peer
+		s.addpeer <- peer
 
 		msg := "Welcome to Poker GameGG Version 1.01\n"
 
@@ -81,12 +91,15 @@ func (s *Server) handleConn(conn net.Conn) {
 
 		if err != nil {
 			if err == io.EOF {
-				fmt.Printf("The connection  %s has been closed\n", conn.RemoteAddr())
+				s.delpeer <- s.peers[conn.RemoteAddr()]
 			}
 			break
 		}
 
-		fmt.Println(string(buf[:n]))
+		s.msgs <- &Message{
+			ListenAddr: conn.RemoteAddr(),
+			Payload:    bytes.NewReader(buf[:n]),
+		}
 
 	}
 
@@ -107,10 +120,19 @@ func (s *Server) Listen() error {
 func (s *Server) loop() {
 	for {
 		select {
-		case peer := <-s.addpear:
+		case peer := <-s.addpeer:
 			s.peers[peer.conn.RemoteAddr()] = peer
 
-			fmt.Printf("New player connected from %s", peer.conn.RemoteAddr())
+			fmt.Printf("New player connected from %s\n", peer.conn.RemoteAddr())
+
+		case peer := <-s.delpeer:
+			delete(s.peers, peer.conn.LocalAddr())
+			fmt.Printf(" Player Disconnectd | Address: %s\n", peer.conn.RemoteAddr())
+
+		case msg := <-s.msgs:
+			if err := s.Handler.HandleMessage(msg); err != nil {
+				panic(err)
+			}
 		}
 	}
 }
