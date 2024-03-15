@@ -91,7 +91,7 @@ func (s *Server) handleConn(conn net.Conn) {
 
 		if err != nil {
 			if err == io.EOF {
-				s.delpeer <- s.peers[conn.RemoteAddr()]
+				fmt.Printf("Connection terminated from client %s\n", conn.RemoteAddr())
 			}
 			break
 		}
@@ -102,6 +102,8 @@ func (s *Server) handleConn(conn net.Conn) {
 		}
 
 	}
+
+	s.delpeer <- s.peers[conn.RemoteAddr()]
 
 }
 
@@ -127,7 +129,7 @@ func (s *Server) loop() {
 
 		case peer := <-s.delpeer:
 			delete(s.peers, peer.conn.LocalAddr())
-			fmt.Printf(" Player Disconnectd | Address: %s\n", peer.conn.RemoteAddr())
+			fmt.Printf("Player Disconnectd | Address: %s\n", peer.conn.RemoteAddr())
 
 		case msg := <-s.msgs:
 			if err := s.Handler.HandleMessage(msg); err != nil {
