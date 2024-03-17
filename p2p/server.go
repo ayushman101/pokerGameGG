@@ -107,7 +107,8 @@ func (s *Server) Connect(addr string) error {
 	}
 
 	peer := &Peer{
-		conn: conn,
+		conn:     conn,
+		outbound: true,
 	}
 
 	s.addpeer <- peer
@@ -164,8 +165,17 @@ func (s *Server) loop() {
 		case peer := <-s.addpeer:
 
 			if err := s.handShake(peer); err != nil {
-				logrus.Info("Handshake failed with player: ", err)
+				logrus.Error("Handshake failed with player: ", err)
+				peer.conn.Close()
 				continue
+			}
+
+			if !peer.outbound {
+				if err := s.SendHandshake(peer, s.GameVariant); err != nil {
+					logrus.Errorf("%s: handshake failed to be sent :%s", s.ListenAddr, err)
+					peer.conn.Close()
+					continue
+				}
 			}
 
 			s.peers[peer.conn.RemoteAddr()] = peer

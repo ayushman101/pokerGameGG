@@ -8,7 +8,8 @@ import (
 )
 
 type Peer struct {
-	conn net.Conn
+	conn     net.Conn
+	outbound bool
 }
 
 func (p *Peer) Send(b []byte) error {
@@ -72,7 +73,8 @@ func (t *tcpTransport) ListenAndAccept() error {
 		}
 
 		peer := &Peer{
-			conn: conn,
+			conn:     conn,
+			outbound: false,
 		}
 
 		t.AddPeer <- peer
