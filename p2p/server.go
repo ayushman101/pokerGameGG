@@ -2,42 +2,49 @@ package p2p
 
 import (
 	"bytes"
+	"encoding/gob"
 	"fmt"
 	"io"
 	"net"
+
+	"github.com/sirupsen/logrus"
 )
 
-type Peer struct {
-	conn net.Conn
-}
+type GameVariant uint8
 
-func (p *Peer) Send(b []byte) error {
-	_, err := p.conn.Write(b)
+const (
+	TexasHoldem GameVariant = iota
+	Other
+)
 
-	return err
+func (g GameVariant) String() string {
+	switch g {
+	case TexasHoldem:
+		return "TEXASHOLDEM"
+	case Other:
+		return "OTHER"
+	default:
+		return "UNKNOWN"
+	}
 }
 
 type ServerConfig struct {
-	ListenAddr string // its port number
-}
-
-type Message struct {
-	ListenAddr net.Addr
-	Payload    io.Reader
+	ListenAddr  string // its port number
+	GameVariant GameVariant
 }
 
 type Server struct {
 	ServerConfig
-	listner net.Listener
 	Handler
-	peers   map[net.Addr]*Peer
-	addpeer chan *Peer
-	delpeer chan *Peer
-	msgs    chan *Message
+	transport *tcpTransport
+	peers     map[net.Addr]*Peer
+	addpeer   chan *Peer
+	delpeer   chan *Peer
+	msgs      chan *Message
 }
 
 func NewServer(config ServerConfig) *Server {
-	return &Server{
+	s := &Server{
 		ServerConfig: config,
 		peers:        make(map[net.Addr]*Peer),
 		addpeer:      make(chan *Peer),
@@ -45,77 +52,90 @@ func NewServer(config ServerConfig) *Server {
 		msgs:         make(chan *Message),
 		Handler:      &DefaultHandler{},
 	}
+
+	tr := NewTcpTransport(s.ListenAddr)
+
+	s.transport = tr
+
+	tr.AddPeer = s.addpeer
+	tr.DelPeer = s.delpeer
+
+	return s
 }
 
 func (s *Server) Start() {
 
 	go s.loop()
 
-	if err := s.Listen(); err != nil {
+	fmt.Println("The server has started at ", s.ListenAddr)
+
+	logrus.WithFields(logrus.Fields{
+		"port":        s.transport.ListenAddr,
+		"GameVariant": s.GameVariant,
+	}).Info("Game has Started")
+
+	if err := s.transport.ListenAndAccept(); err != nil {
 		panic(err)
 	}
 
-	fmt.Println("The server has started at ", s.ListenAddr)
-
-	s.acceptLoop()
 }
 
-func (s *Server) acceptLoop() {
-	for {
-		conn, err := s.listner.Accept()
-
-		if err != nil {
-			panic(err)
-		}
-
-		peer := &Peer{
-			conn: conn,
-		}
-
-		s.addpeer <- peer
-
-		msg := "Welcome to Poker GameGG Version 1.01\n"
-
-		peer.Send([]byte(msg))
-
-		go s.handleConn(conn)
-	}
-}
-
-func (s *Server) handleConn(conn net.Conn) {
-
-	buf := make([]byte, 1024)
-
-	for {
-		n, err := conn.Read(buf)
-
-		if err != nil {
-			if err == io.EOF {
-				fmt.Printf("Connection terminated from client %s\n", conn.RemoteAddr())
-			}
-			break
-		}
-
-		s.msgs <- &Message{
-			ListenAddr: conn.RemoteAddr(),
-			Payload:    bytes.NewReader(buf[:n]),
-		}
-
-	}
-
-	s.delpeer <- s.peers[conn.RemoteAddr()]
-
-}
-
-func (s *Server) Listen() error {
-
-	ln, err := net.Listen("tcp", s.ListenAddr)
+func (s *Server) Connect(addr string) error {
+	conn, err := net.Dial("tcp", addr)
 
 	if err != nil {
 		return err
 	}
 
-	s.listner = ln
+	peer := &Peer{
+		conn: conn,
+	}
+
+	s.addpeer <- peer
+
+	return peer.SendHandshake(s.GameVariant)
+}
+
+func (s *Server) handShake(p *Peer) error {
+	hs := &HandShake{}
+
+	buf := make([]byte, 1024)
+
+	if _, err := p.conn.Read(buf); err != nil {
+		return err
+	}
+
+	b := bytes.NewBuffer(buf)
+
+	decoder := gob.NewDecoder(b)
+
+	fmt.Println("Decoder created")
+
+	if err := decoder.Decode(hs); err != nil {
+		if err == io.EOF {
+			logrus.Info("Handshake: Reached end of input data stream")
+		} else if err == io.ErrUnexpectedEOF {
+			fmt.Println("Handshake : Unexpected EOF")
+			fmt.Println(hs)
+		} else {
+			fmt.Println("Error in Decoding hs")
+			return err
+
+		}
+
+	}
+
+	if hs.GameVariant != s.GameVariant {
+		logrus.Error(" Handshake failed")
+		return fmt.Errorf("player gameVariant incompatible with server game variant")
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"peer":    p.conn.RemoteAddr(),
+		"Version": hs.Version,
+		"Variant": hs.GameVariant,
+	}).Info(" Handshake Received")
+
 	return nil
 }
 
@@ -123,12 +143,20 @@ func (s *Server) loop() {
 	for {
 		select {
 		case peer := <-s.addpeer:
+
+			if err := s.handShake(peer); err != nil {
+				logrus.Info("Handshake failed with player: ", err)
+				continue
+			}
+
 			s.peers[peer.conn.RemoteAddr()] = peer
 
 			fmt.Printf("New player connected from %s\n", peer.conn.RemoteAddr())
 
+			go peer.ReadLoop(s.msgs)
+
 		case peer := <-s.delpeer:
-			delete(s.peers, peer.conn.LocalAddr())
+			delete(s.peers, peer.conn.RemoteAddr())
 			fmt.Printf("Player Disconnectd | Address: %s\n", peer.conn.RemoteAddr())
 
 		case msg := <-s.msgs:
