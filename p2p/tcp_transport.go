@@ -2,7 +2,6 @@ package p2p
 
 import (
 	"bytes"
-	"encoding/gob"
 	"fmt"
 	"io"
 	"net"
@@ -40,25 +39,6 @@ func (p *Peer) ReadLoop(msgc chan *Message) {
 
 	//TODO: unregister this peer
 	p.conn.Close()
-
-}
-
-func (p *Peer) SendHandshake(Variant GameVariant) error {
-
-	defer fmt.Println("Handshake sent successfully by player")
-
-	hs := &HandShake{
-		GameVariant: Variant,
-	}
-
-	buf := new(bytes.Buffer)
-
-	if err := gob.NewEncoder(buf).Encode(hs); err != nil {
-		fmt.Println("There is an error in encoding")
-		return err
-	}
-
-	return p.Send(buf.Bytes())
 
 }
 

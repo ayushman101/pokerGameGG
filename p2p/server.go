@@ -80,6 +80,25 @@ func (s *Server) Start() {
 
 }
 
+func (s *Server) SendHandshake(p *Peer, Variant GameVariant) error {
+
+	defer fmt.Println("Handshake sent successfully by player")
+
+	hs := &HandShake{
+		GameVariant: Variant,
+	}
+
+	buf := new(bytes.Buffer)
+
+	if err := gob.NewEncoder(buf).Encode(hs); err != nil {
+		fmt.Println("There is an error in encoding")
+		return err
+	}
+
+	return p.Send(buf.Bytes())
+
+}
+
 func (s *Server) Connect(addr string) error {
 	conn, err := net.Dial("tcp", addr)
 
@@ -93,7 +112,7 @@ func (s *Server) Connect(addr string) error {
 
 	s.addpeer <- peer
 
-	return peer.SendHandshake(s.GameVariant)
+	return s.SendHandshake(peer, s.GameVariant)
 }
 
 func (s *Server) handShake(p *Peer) error {
