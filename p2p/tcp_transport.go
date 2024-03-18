@@ -1,9 +1,11 @@
 package p2p
 
 import (
-	"bytes"
+	// "bytes"
+	"encoding/gob"
 	"fmt"
-	"io"
+
+	// "io"
 	"net"
 )
 
@@ -19,33 +21,32 @@ func (p *Peer) Send(b []byte) error {
 }
 
 func (p *Peer) ReadLoop(msgc chan *Message) {
-	buf := make([]byte, 1024)
+	// buf := make([]byte, 1024)
 
 	for {
-		n, err := p.conn.Read(buf)
+		// n, err := p.conn.Read(buf)
 
-		if err != nil {
-			if err == io.EOF {
-				fmt.Printf("Connection terminated from client %s\n", p.conn.RemoteAddr())
-			}
+		// if err != nil {
+		// 	if err == io.EOF {
+		// 		fmt.Printf("Connection terminated from client %s\n", p.conn.RemoteAddr())
+		// 	}
+		// 	break
+		// }
+
+		msg := new(Message)
+
+		if err := gob.NewDecoder(p.conn).Decode(msg); err != nil {
+			fmt.Println("Decoding Message failed : ", err)
 			break
 		}
 
-		msgc <- &Message{
-			ListenAddr: p.conn.RemoteAddr(),
-			Payload:    bytes.NewReader(buf[:n]),
-		}
+		msgc <- msg
 
 	}
 
 	//TODO: unregister this peer
 	p.conn.Close()
 
-}
-
-type Message struct {
-	ListenAddr net.Addr
-	Payload    io.Reader
 }
 
 type tcpTransport struct {

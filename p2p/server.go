@@ -10,27 +10,10 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type GameVariant uint8
-
-const (
-	TexasHoldem GameVariant = iota
-	Other
-)
-
-func (g GameVariant) String() string {
-	switch g {
-	case TexasHoldem:
-		return "TEXASHOLDEM"
-	case Other:
-		return "OTHER"
-	default:
-		return "UNKNOWN"
-	}
-}
-
 type ServerConfig struct {
 	ListenAddr  string // its port number
 	GameVariant GameVariant
+	GameStatus  GameStatus
 }
 
 type Server struct {
@@ -72,6 +55,7 @@ func (s *Server) Start() {
 	logrus.WithFields(logrus.Fields{
 		"port":        s.transport.ListenAddr,
 		"GameVariant": s.GameVariant,
+		"GameStatus":  s.GameStatus,
 	}).Info("Game has Started")
 
 	if err := s.transport.ListenAndAccept(); err != nil {
@@ -80,12 +64,13 @@ func (s *Server) Start() {
 
 }
 
-func (s *Server) SendHandshake(p *Peer, Variant GameVariant) error {
+func (s *Server) SendHandshake(p *Peer, Variant GameVariant, gameStatus GameStatus) error {
 
-	defer fmt.Println("Handshake sent successfully by player")
+	defer fmt.Println("Handshake sent successfully by player : ", s.ListenAddr)
 
 	hs := &HandShake{
 		GameVariant: Variant,
+		GameStatus:  gameStatus,
 	}
 
 	buf := new(bytes.Buffer)
@@ -113,7 +98,27 @@ func (s *Server) Connect(addr string) error {
 
 	s.addpeer <- peer
 
-	return s.SendHandshake(peer, s.GameVariant)
+	fmt.Printf("%s connected with %s\n", s.ListenAddr, peer.conn.RemoteAddr().String())
+
+	return s.SendHandshake(peer, s.GameVariant, s.GameStatus)
+}
+
+func (s *Server) SendPeerList(p *Peer) error {
+	peerList := make([]string, len(s.peers))
+	//add peer addresses
+
+	buf := new(bytes.Buffer)
+
+	msg := NewMessage(s.ListenAddr, peerList)
+
+	if err := gob.NewEncoder(buf).Encode(msg); err != nil {
+		return err
+	}
+
+	p.Send(buf.Bytes())
+
+	return nil
+
 }
 
 func (s *Server) handShake(p *Peer) error {
@@ -150,10 +155,17 @@ func (s *Server) handShake(p *Peer) error {
 		return fmt.Errorf("player gameVariant incompatible with server game variant")
 	}
 
+	if hs.GameStatus != s.GameStatus {
+		logrus.Error(" Handshake failed")
+		return fmt.Errorf("player gameStatus incompatible with server gameStatus")
+	}
+
 	logrus.WithFields(logrus.Fields{
-		"peer":    p.conn.RemoteAddr(),
-		"Version": hs.Version,
-		"Variant": hs.GameVariant,
+		"server":     s.ListenAddr,
+		"peer":       p.conn.RemoteAddr(),
+		"Version":    hs.Version,
+		"Variant":    hs.GameVariant,
+		"GameStatus": hs.GameStatus,
 	}).Info(" Handshake Received")
 
 	return nil
@@ -171,8 +183,14 @@ func (s *Server) loop() {
 			}
 
 			if !peer.outbound {
-				if err := s.SendHandshake(peer, s.GameVariant); err != nil {
+				if err := s.SendHandshake(peer, s.GameVariant, s.GameStatus); err != nil {
 					logrus.Errorf("%s: handshake failed to be sent :%s", s.ListenAddr, err)
+					peer.conn.Close()
+					continue
+				}
+
+				if err := s.SendPeerList(peer); err != nil {
+					logrus.Errorf("%s: peerList failed to be sent :%s", s.ListenAddr, err)
 					peer.conn.Close()
 					continue
 				}
