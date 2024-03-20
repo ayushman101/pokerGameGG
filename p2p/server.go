@@ -30,10 +30,9 @@ func NewServer(config ServerConfig) *Server {
 	s := &Server{
 		ServerConfig: config,
 		peers:        make(map[net.Addr]*Peer),
-		addpeer:      make(chan *Peer),
+		addpeer:      make(chan *Peer, 100),
 		delpeer:      make(chan *Peer),
 		msgs:         make(chan *Message),
-		Handler:      &DefaultHandler{},
 	}
 
 	tr := NewTcpTransport(s.ListenAddr)
@@ -85,11 +84,16 @@ func (s *Server) SendHandshake(p *Peer, Variant GameVariant, gameStatus GameStat
 }
 
 func (s *Server) Connect(addr string) error {
+
+	fmt.Printf("%s is connecting to %s\n", s.ListenAddr, addr)
+
 	conn, err := net.Dial("tcp", addr)
 
 	if err != nil {
 		return err
 	}
+
+	fmt.Println("addr: ", addr)
 
 	peer := &Peer{
 		conn:     conn,
@@ -97,15 +101,22 @@ func (s *Server) Connect(addr string) error {
 	}
 
 	s.addpeer <- peer
-
 	fmt.Printf("%s connected with %s\n", s.ListenAddr, peer.conn.RemoteAddr().String())
 
-	return s.SendHandshake(peer, s.GameVariant, s.GameStatus)
+	err = s.SendHandshake(peer, s.GameVariant, s.GameStatus)
+
+	return err
 }
 
 func (s *Server) SendPeerList(p *Peer) error {
+
 	peerList := make([]string, len(s.peers))
-	//add peer addresses
+
+	it := 0
+	for addr := range s.peers {
+		peerList[it] = addr.String()
+		it++
+	}
 
 	buf := new(bytes.Buffer)
 
@@ -125,6 +136,8 @@ func (s *Server) handShake(p *Peer) error {
 	hs := &HandShake{}
 
 	buf := make([]byte, 1024)
+
+	fmt.Printf("Handling handshake in %s from %s\n", s.ListenAddr, p.conn.RemoteAddr())
 
 	if _, err := p.conn.Read(buf); err != nil {
 		return err
@@ -171,10 +184,47 @@ func (s *Server) handShake(p *Peer) error {
 	return nil
 }
 
+func (s *Server) handlePeerList(l *MessagePeerList) error {
+
+	fmt.Printf("Handling Peer List in %s : PeerList: %v\n", s.ListenAddr, l.Peers)
+
+	for _, str := range l.Peers {
+		// str = ":4000"
+		if err := s.Connect(str); err != nil {
+			return fmt.Errorf("connection with peerlist element failed: %w", err)
+		}
+
+		fmt.Printf("Inside handlePeerList loop of %s\n", s.ListenAddr)
+	}
+
+	fmt.Printf("HandlePeerList ended: %s\n", s.ListenAddr)
+	return nil
+}
+
+func (s *Server) HandleMessage(msg *Message) error {
+
+	logrus.WithFields(logrus.Fields{
+		"msg from: ": msg.ListenAddr,
+	}).Info("received message")
+
+	switch v := msg.Payload.(type) {
+	case []string:
+		fmt.Printf("handling MessagePeerList from %s: %+v\n", msg.ListenAddr, v)
+		err := s.handlePeerList(&MessagePeerList{Peers: v})
+		logrus.Errorf(" Handle Peer List failed: %+v", err)
+	default:
+		fmt.Printf("Other Message: %s\n", v)
+
+	}
+	return nil
+}
+
 func (s *Server) loop() {
 	for {
 		select {
 		case peer := <-s.addpeer:
+
+			fmt.Printf("%s server adding peer with addr: %s\n", s.ListenAddr, peer.conn.RemoteAddr())
 
 			if err := s.handShake(peer); err != nil {
 				logrus.Error("Handshake failed with player: ", err)
@@ -188,6 +238,8 @@ func (s *Server) loop() {
 					peer.conn.Close()
 					continue
 				}
+
+				fmt.Printf("%s has sent peerlist to %s\n", s.ListenAddr, peer.conn.RemoteAddr())
 
 				if err := s.SendPeerList(peer); err != nil {
 					logrus.Errorf("%s: peerList failed to be sent :%s", s.ListenAddr, err)
@@ -207,7 +259,7 @@ func (s *Server) loop() {
 			fmt.Printf("Player Disconnectd | Address: %s\n", peer.conn.RemoteAddr())
 
 		case msg := <-s.msgs:
-			if err := s.Handler.HandleMessage(msg); err != nil {
+			if err := s.HandleMessage(msg); err != nil {
 				panic(err)
 			}
 		}

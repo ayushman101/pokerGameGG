@@ -78,6 +78,8 @@ func (t *tcpTransport) ListenAndAccept() error {
 			outbound: false,
 		}
 
+		fmt.Printf("%s has accepted %s\n", t.ListenAddr, peer.conn.RemoteAddr())
+
 		t.AddPeer <- peer
 
 	}

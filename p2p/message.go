@@ -1,8 +1,8 @@
 package p2p
 
-import (
-	"fmt"
-)
+// "fmt"
+
+// "github.com/sirupsen/logrus"
 
 type Message struct {
 	ListenAddr string
@@ -16,22 +16,12 @@ func NewMessage(from string, payload any) *Message {
 	}
 }
 
-type Peers []string
+type MessagePeerList struct {
+	Peers []string
+}
 
 type Handler interface {
 	HandleMessage(*Message) error
 }
 
 type DefaultHandler struct{}
-
-func (h *DefaultHandler) HandleMessage(msg *Message) error {
-
-	switch v := msg.Payload.(type) {
-	case []string:
-		fmt.Printf("handling MessagePeerList from %s: %+v\n", msg.ListenAddr, v)
-	default:
-		fmt.Printf("Other Message: %s\n", v)
-
-	}
-	return nil
-}
