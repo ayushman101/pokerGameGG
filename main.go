@@ -8,10 +8,10 @@ import (
 	"github.com/ayushman101/pokerGameGG/p2p"
 )
 
-func main() {
+func makeServerAndStart(addr string) *p2p.Server {
 
 	cfg := p2p.ServerConfig{
-		ListenAddr:  ":3000",
+		ListenAddr:  addr,
 		GameVariant: p2p.TexasHoldem,
 	}
 
@@ -19,33 +19,33 @@ func main() {
 
 	go s.Start()
 
+	return s
+
+}
+
+func main() {
+
+	player1 := makeServerAndStart(":3000")
+
+	player2 := makeServerAndStart(":4000")
+
+	player3 := makeServerAndStart(":6000")
+
+	player4 := makeServerAndStart(":5000")
+
 	time.Sleep(1 * time.Second)
 
-	remoteCfg := p2p.ServerConfig{
-		ListenAddr:  ":4000",
-		GameVariant: p2p.TexasHoldem,
-	}
-
-	remoteServer := p2p.NewServer(remoteCfg)
-
-	go remoteServer.Start()
-
-	if err := remoteServer.Connect(":3000"); err != nil {
+	if err := player1.Connect(player2.ListenAddr); err != nil {
 		log.Fatal(err)
 	}
 
 	time.Sleep(1 * time.Second)
 
-	OtherCfg := p2p.ServerConfig{
-		ListenAddr:  ":4001",
-		GameVariant: p2p.TexasHoldem,
+	if err := player3.Connect(player2.ListenAddr); err != nil {
+		log.Fatal(err)
 	}
 
-	OtherServer := p2p.NewServer(OtherCfg)
-
-	go OtherServer.Start()
-
-	if err := OtherServer.Connect(":3000"); err != nil {
+	if err := player4.Connect(player1.ListenAddr); err != nil {
 		log.Fatal(err)
 	}
 
