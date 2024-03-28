@@ -32,10 +32,11 @@ func main() {
 	player3 := makeServerAndStart(":6000")
 
 	player4 := makeServerAndStart(":5000")
+	player5 := makeServerAndStart(":7000")
 
 	time.Sleep(1 * time.Second)
 
-	if err := player1.Connect(player2.ListenAddr); err != nil {
+	if err := player2.Connect(player1.ListenAddr); err != nil {
 		log.Fatal(err)
 	}
 
@@ -45,7 +46,15 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if err := player4.Connect(player1.ListenAddr); err != nil {
+	time.Sleep(1 * time.Second)
+
+	if err := player4.Connect(player3.ListenAddr); err != nil {
+		log.Fatal(err)
+	}
+
+	time.Sleep(1 * time.Second)
+
+	if err := player5.Connect(player4.ListenAddr); err != nil {
 		log.Fatal(err)
 	}
 
