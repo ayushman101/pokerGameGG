@@ -47,3 +47,16 @@ func (g GameStatus) String() string {
 		return "unknown"
 	}
 }
+
+type GameState struct {
+	isDealer   bool       //atomically accessable
+	gameStatus GameStatus //atomically accessable
+}
+
+func NewGameState() *GameState {
+	return &GameState{}
+}
+
+func (g *GameState) loop() {
+
+}
